@@ -1,3 +1,4 @@
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 from django_lifecycle import LifecycleModel, hook, AFTER_CREATE, AFTER_UPDATE
 from django.core.exceptions import ValidationError
@@ -9,6 +10,25 @@ from django_celery_beat import validators
 from multiselectfield import MultiSelectField
 
 from parser.tasks import fetch_and_save_to_db
+
+
+class ProxySet(models.Model):
+    name = models.CharField(max_length=100)
+    proxies = ArrayField(models.TextField())
+
+    def formatted_proxies(self):
+        formatted_proxies = []
+        for proxy in self.proxies:
+            host, port, username, password = proxy.split(":")
+            formatted_proxy = {
+                'http': f'socks5://{username}:{password}@{host}:{port}',
+                'https': f'socks5://{username}:{password}@{host}:{port}'
+            }
+            formatted_proxies.append(formatted_proxy)
+        return formatted_proxies
+
+    def __str__(self):
+        return self.name
 
 
 class Task(LifecycleModel, models.Model):
@@ -25,6 +45,8 @@ class Task(LifecycleModel, models.Model):
     created_at = models.DateTimeField(auto_now=True)
     status = models.PositiveSmallIntegerField(choices=Status.choices, default=Status.PENDING)
     periodic_task = models.ForeignKey("ParsePeriodicTask", on_delete=models.SET_NULL, blank=True, null=True)
+    proxy_set = models.ForeignKey(ProxySet, on_delete=models.SET_NULL, blank=True, null=True)
+    use_proxy = models.BooleanField(default=False)
     errors = models.TextField(blank=True, null=True)
 
     def __str__(self):
@@ -81,6 +103,8 @@ class ParsePeriodicTask(LifecycleModel, models.Model):
         null=True,
         blank=True
     )
+    proxy_set = models.ForeignKey(ProxySet, on_delete=models.SET_NULL, blank=True, null=True)
+    use_proxy = models.BooleanField(default=False)
 
     @hook(AFTER_CREATE)
     def setup_task(self):

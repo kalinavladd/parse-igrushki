@@ -3,21 +3,23 @@ from import_export.admin import ExportMixin
 from import_export import resources
 from import_export.fields import Field
 from rangefilter.filters import DateRangeFilter
+from django import forms
+from django.forms import Textarea
 
-from parser.models import Task, ParsePeriodicTask, Product
+from parser.models import Task, ParsePeriodicTask, Product, ProxySet
 
 
 class TaskAdmin(admin.ModelAdmin):
-    list_display = ('__str__', 'name', 'created_at', 'status')
+    list_display = ('__str__', 'name', 'created_at', 'status', 'use_proxy')
     search_fields = ('name',)
-    fields = ('name', 'created_at', 'status', 'errors')
+    fields = ('name', 'created_at', 'status', 'use_proxy', 'proxy_set',  'errors')
     readonly_fields = ('created_at', 'status', 'errors')
 
 
 class ParsePeriodicTaskAdmin(admin.ModelAdmin):
-    list_display = ('id', 'name', 'time')
+    list_display = ('id', 'name', 'time', 'day_of_week', 'month_of_year', 'use_proxy')
     search_fields = ('name',)
-    fields = ('name', 'time', 'day_of_week', 'month_of_year')
+    fields = ('name', 'time', 'day_of_week', 'month_of_year', 'use_proxy', 'proxy_set')
 
 
 class ProductResource(resources.ModelResource):
@@ -67,6 +69,22 @@ class ProductAdmin(ExportMixin, admin.ModelAdmin):
         return [field.name for field in Product._meta.fields]
 
 
+class ProxySetForm(forms.ModelForm):
+    class Meta:
+        model = ProxySet
+        fields = '__all__'
+        widgets = {
+            'proxies': Textarea(attrs={'cols': 80, 'rows': 20}),
+        }
+
+
+class ProxySetAdmin(admin.ModelAdmin):
+    list_display = ('name', "proxies")
+    search_fields = ('name',)
+    form = ProxySetForm
+
+
 admin.site.register(Task, TaskAdmin)
 admin.site.register(ParsePeriodicTask, ParsePeriodicTaskAdmin)
 admin.site.register(Product, ProductAdmin)
+admin.site.register(ProxySet, ProxySetAdmin)

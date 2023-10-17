@@ -1,5 +1,5 @@
-import json
 import time
+import random
 
 import requests
 from io import BytesIO
@@ -9,16 +9,21 @@ from bs4 import BeautifulSoup
 from config.celery_app import app
 
 
-def fetch_description_from_site(product_id):
+def fetch_description_from_site(product_id, proxy=None):
+
     url = f"https://igrushki7.ua/advanced_search_result.php?keywords={product_id}"
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
                       '(KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
+
     session = requests.Session()
+    if proxy:
+        session.proxies = proxy
     response = session.get(url, headers=headers)
     soup = BeautifulSoup(response.text, 'html.parser')
     time.sleep(1)
+
     links = soup.find_all("a", href=True)
     product_link = [link['href'] for link in links if link['href'].startswith(
         'https://igrushki7.ua/product_info.php?info=')][0]
@@ -38,6 +43,11 @@ def fetch_and_save_to_db(task_id):
     task = parser_models.Task.objects.get(id=task_id)
     url = 'https://igrushki7.ua/export/prom.xlsx'
     response = requests.get(url)
+    proxy_list = []
+    if task.use_proxy:
+        proxy_list = task.proxy_set.formatted_proxies()
+    else:
+        proxy_list = []
 
     with BytesIO(response.content) as f:
         product_df = pd.read_excel(f, sheet_name="Export Products Sheet")
@@ -86,11 +96,23 @@ def fetch_and_save_to_db(task_id):
                 }
             )
             if created:
-                product_info, product_info_ru = fetch_description_from_site(row["Идентификатор_товара"])
-                product.description = product_info_ru
-                product.description_uk = product_info
-                product.save()
-
+                if proxy_list:
+                    while proxy_list:
+                        proxy = random.choice(proxy_list)
+                        try:
+                            product_info, product_info_ru = fetch_description_from_site(
+                                row["Идентификатор_товара"], proxy)
+                            product.description = product_info_ru
+                            product.description_uk = product_info
+                            product.save()
+                            break
+                        except Exception:
+                            proxy_list.remove(proxy)
+                else:
+                    product_info, product_info_ru = fetch_description_from_site(row["Идентификатор_товара"])
+                    product.description = product_info_ru
+                    product.description_uk = product_info
+                    product.save()
         except Exception as e:
             product.delete()
             task.errors = str(e)
@@ -109,4 +131,6 @@ def create_task(periodic_task_id):
         created_at=periodic_task.created_at,
         status=parser_models.Task.Status.PROCESSING,
         periodic_task_id=periodic_task_id,
+        proxy_set=periodic_task.proxy_set,
+        use_proxy=periodic_task.use_proxy
     )
