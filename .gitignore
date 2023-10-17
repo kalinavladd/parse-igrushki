@@ -1,0 +1,9 @@
+env
+.env
+db
+rabbit
+static
+logs
+Archive.zip
+inst.txt
+celerybeat-schedule

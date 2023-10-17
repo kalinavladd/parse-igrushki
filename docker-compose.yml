@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  parse_igrushki_db:
+    image: postgres:14-alpine
+    volumes:
+      - ./db:/var/lib/postgresql/data
+
+    environment:
+      - POSTGRES_DB=parse
+      - POSTGRES_USER=parse
+      - POSTGRES_PASSWORD=parse
+
+  parse_igrushki_web:
+    image: parse_igrushki_backend:dev
+    build:
+      context: .
+    command: bash -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - .:/code
+      - ./logs:/logs
+      - ./static:/code/static
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      - parse_igrushki_db
+
+  parse_igrushki_celery:
+    image: parse_igrushki_backend:dev
+    build:
+      context: .
+    command: celery -A config worker -l info -c 1
+    volumes:
+      - .:/code
+      - ../logs:/logs
+      - ./static:/code/static
+    depends_on:
+      - parse_igrushki_db
+      - parse_igrushki_rabbit
+      - parse_igrushki_web
+
+  parse_igrushki_celery-beat:
+    image: parse_igrushki_backend:dev
+    build: .
+    command: celery -A config beat -l info
+    volumes:
+      - .:/code
+      - ../logs:/logs
+      - ./static:/code/static
+    depends_on:
+      - parse_igrushki_db
+      - parse_igrushki_rabbit
+      - parse_igrushki_web
+
+  parse_igrushki_rabbit:
+    image: rabbitmq:3.12-management
+    environment:
+      - RABBITMQ_DEFAULT_USER=parse
+      - RABBITMQ_DEFAULT_PASS=parse
+      - RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-rabbit log_levels [{connection,error},{default,error}] disk_free_limit 2147483648
+    volumes:
+      - ./rabbit:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
